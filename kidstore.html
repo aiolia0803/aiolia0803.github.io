@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小小店長 - 夢幻便利商店結帳大冒險</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Fredoka & Varela Round -->
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Mplus+1p:wght@500;800&display=swap" rel="stylesheet">
+  <!-- Canvas Confetti Library -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- ZXing Barcode Decoding Library -->
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+
+  <style>
+    body {
+      font-family: 'Fredoka', 'Mplus 1p', sans-serif;
+      background: linear-gradient(135deg, #ffd1dc 0%, #e0c3fc 50%, #8ec5fc 100%);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    .scanner-laser {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 0, 85, 0.85);
+      box-shadow: 0 0 12px #ff0055, 0 0 4px #ff0055;
+      animation: scan 1.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes scan {
+      0% { top: 10%; }
+      100% { top: 90%; }
+    }
+
+    .conveyor-bg {
+      background: repeating-linear-gradient(
+        45deg,
+        #f3f4f6,
+        #f3f4f6 15px,
+        #e5e7eb 15px,
+        #e5e7eb 30px
+      );
+      animation: conveyorMove 2s linear infinite;
+      background-size: 42px 42px;
+    }
+
+    @keyframes conveyorMove {
+      0% { background-position: 0 0; }
+      100% { background-position: 42px 0; }
+    }
+
+    .bounce-gentle {
+      animation: bounceGentle 2s infinite;
+    }
+
+    @keyframes bounceGentle {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    /* Conveyor Item Entrance & Exit Animations */
+    @keyframes itemAppear {
+      0% { opacity: 0; transform: scale(0.5) translateY(-20px); }
+      80% { transform: scale(1.08); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .animate-item-appear {
+      animation: itemAppear 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #fff5f8;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #f472b6;
+      border-radius: 10px;
+    }
+
+    /* Receipt animation */
+    @keyframes printReceipt {
+      0% { max-height: 0; opacity: 0; transform: translateY(-20px); }
+      100% { max-height: 1000px; opacity: 1; transform: translateY(0); }
+    }
+    .animate-print {
+      animation: printReceipt 1.2s ease-out forwards;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-slate-700 flex flex-col justify-between p-2 sm:p-4">
+
+  <!-- Header / Navigation -->
+  <header class="max-w-6xl w-full mx-auto bg-white/90 backdrop-blur-md rounded-3xl p-3 sm:p-4 shadow-lg flex flex-wrap items-center justify-between gap-2 border-4 border-pink-200">
+    <div class="flex items-center gap-3">
+      <div class="w-12 h-12 bg-pink-400 text-white rounded-2xl flex items-center justify-center text-2xl shadow-md bounce-gentle">
+        🛍️
+      </div>
+      <div>
+        <h1 class="text-xl sm:text-2xl font-extrabold text-pink-600 tracking-wide flex items-center gap-2">
+          小小店長夢幻便利商店
+          <span class="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full font-bold">兒童版</span>
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">逼逼！快來幫可愛顧客結帳吧！</p>
+      </div>
+    </div>
+
+    <!-- Mode Selector, Stats & Fullscreen Toggle -->
+    <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+      <!-- Fullscreen Button -->
+      <button id="btnFullscreen" onclick="toggleFullscreen()" class="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 active:scale-95 text-white font-extrabold text-xs px-3.5 py-2 rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 border-2 border-white">
+        <i id="fullscreenIcon" class="fa-solid fa-expand text-sm"></i>
+        <span id="fullscreenText">全螢幕模式</span>
+      </button>
+
+      <!-- Stars & Coins -->
+      <div class="flex items-center gap-3 bg-pink-50 border-2 border-pink-200 rounded-2xl px-3 py-1.5 text-sm font-bold">
+        <span class="flex items-center gap-1 text-amber-500"><i class="fa-solid fa-star"></i> <span id="starCount">0</span></span>
+        <span class="flex items-center gap-1 text-emerald-600"><i class="fa-solid fa-coins"></i> $<span id="coinCount">100</span></span>
+      </div>
+
+      <!-- Mode Toggle -->
+      <div class="bg-slate-100 p-1 rounded-2xl flex text-xs font-bold border border-slate-200">
+        <button id="btnModeFree" onclick="switchMode('free')" class="px-3 py-1.5 rounded-xl transition-all duration-200 bg-pink-500 text-white shadow-sm">
+          <i class="fa-solid fa-store mr-1"></i>自由體驗
+        </button>
+        <button id="btnModeChallenge" onclick="switchMode('challenge')" class="px-3 py-1.5 rounded-xl transition-all duration-200 text-slate-600 hover:text-pink-500">
+          <i class="fa-solid fa-trophy mr-1"></i>顧客挑戰
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl w-full mx-auto my-3 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
+
+    <!-- LEFT COLUMN: Product Shelf & Camera Scanner (5 cols) -->
+    <section class="lg:col-span-5 flex flex-col gap-4">
+      
+      <!-- Camera Barcode Scanner Card -->
+      <div class="bg-white/95 rounded-3xl p-4 shadow-lg border-4 border-purple-200 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-slate-700 flex items-center gap-2 text-base">
+            <i class="fa-solid fa-barcode text-purple-500"></i> 雷射條碼掃描機
+          </h2>
+          <button id="toggleCamBtn" onclick="toggleCamera()" class="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold px-3 py-1.5 rounded-xl transition flex items-center gap-1">
+            <i class="fa-solid fa-video"></i> <span id="camBtnText">開啟鏡頭掃條碼</span>
+          </button>
+        </div>
+
+        <!-- Scanner Viewport / Visualizer -->
+        <div class="relative w-full h-44 bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center border-2 border-purple-300 shadow-inner group">
+          <!-- Video feed -->
+          <video id="webcamVideo" class="w-full h-full object-cover hidden" playsinline></video>
+          
+          <!-- Scanner laser overlay -->
+          <div id="laserLine" class="scanner-laser hidden"></div>
+
+          <!-- Fallback Visual / Status -->
+          <div id="scannerFallback" class="text-center p-4 text-slate-300 flex flex-col items-center">
+            <i class="fa-solid fa-qrcode text-4xl mb-2 text-purple-400 animate-pulse"></i>
+            <p id="cameraStatusText" class="text-xs font-semibold">點擊右上方按鈕開啟鏡頭掃描<br>或直接點擊下方商品逼逼結帳！</p>
+          </div>
+
+          <!-- Quick Flash Notification when Scanned -->
+          <div id="scanFlash" class="absolute inset-0 bg-emerald-400/30 opacity-0 pointer-events-none transition-opacity duration-200"></div>
+        </div>
+      </div>
+
+      <!-- Product Shelf Catalog -->
+      <div class="bg-white/95 rounded-3xl p-4 shadow-lg border-4 border-pink-200 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-slate-700 flex items-center gap-2 text-base">
+            <i class="fa-solid fa-shapes text-pink-500"></i> 商品架 (點擊放上輸送帶)
+          </h2>
+          <button onclick="openPrintBarcodesModal()" class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-2.5 py-1 rounded-xl transition flex items-center gap-1">
+            <i class="fa-solid fa-print"></i> 列印實體條碼
+          </button>
+        </div>
+
+        <!-- Products Grid -->
+        <div id="productGrid" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 gap-2 overflow-y-auto max-h-[320px] p-1">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: Counter, Register & Customers (7 cols) -->
+    <section class="lg:col-span-7 flex flex-col gap-4">
+
+      <!-- Challenge Customer Banner (Visible in Challenge Mode) -->
+      <div id="customerBanner" class="hidden bg-gradient-to-r from-amber-200 via-orange-200 to-pink-200 rounded-3xl p-3 shadow-md border-4 border-white flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div id="customerAvatar" class="text-4xl bg-white p-2 rounded-2xl shadow-sm">🐰</div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="customerName" class="font-bold text-slate-800">兔兔小姐</span>
+              <span id="customerDialog" class="text-xs bg-white text-pink-600 px-2 py-0.5 rounded-full font-bold shadow-sm">我想買這些東西！</span>
+            </div>
+            <!-- Customer Wanted List Icons -->
+            <div id="customerWishlist" class="flex gap-1.5 mt-1">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-slate-600 font-bold">小費獎勵</div>
+          <div id="customerReward" class="text-emerald-600 font-extrabold text-lg">+$30</div>
+        </div>
+      </div>
+
+      <!-- Conveyor Belt & Scan Area -->
+      <div class="bg-white/95 rounded-3xl p-4 shadow-lg border-4 border-blue-200 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-slate-700 flex items-center gap-2 text-base">
+            <i class="fa-solid fa-cart-shopping text-blue-500"></i> 結帳輸送帶
+          </h2>
+          <span class="text-xs text-slate-400 font-medium">與結帳明細同步展示</span>
+        </div>
+
+        <!-- Conveyor Belt Area -->
+        <div id="conveyorArea" class="conveyor-bg h-28 rounded-2xl border-2 border-slate-300 flex items-center px-4 overflow-x-auto gap-3 relative shadow-inner">
+          <div id="emptyConveyorText" class="w-full text-center text-slate-400 font-bold text-sm">
+            🛒 輸送帶是空的喔～點擊商品架商品開始結帳！
+          </div>
+          <!-- Belt Items dynamically rendered here -->
+        </div>
+      </div>
+
+      <!-- Cash Register Display & Cart Summary -->
+      <div class="bg-white/95 rounded-3xl p-4 shadow-lg border-4 border-emerald-200 flex-1 flex flex-col justify-between gap-4">
+        
+        <!-- Screen Header / Item Table -->
+        <div>
+          <div class="bg-slate-800 rounded-2xl p-3 text-green-400 font-mono shadow-inner mb-3 border-2 border-slate-700">
+            <div class="flex justify-between items-center text-xs border-b border-slate-700 pb-1 mb-1 text-slate-400 font-sans">
+              <span>已掃描商品明細</span>
+              <span id="registerItemCount">0 件商品</span>
+            </div>
+            
+            <!-- Item List -->
+            <div id="cartItemsList" class="max-h-36 overflow-y-auto space-y-1 text-sm font-sans pr-1">
+              <div class="text-center text-slate-500 py-4 font-normal text-xs">尚無商品，請逼逼掃描條碼</div>
+            </div>
+
+            <!-- Total Price Summary -->
+            <div class="border-t-2 border-slate-700 pt-2 mt-2 flex justify-between items-end">
+              <span class="text-xs text-slate-300 font-sans">應付總額 Total</span>
+              <span class="text-2xl font-black text-amber-300 tracking-wider">$<span id="cartTotal">0</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Checkout Action Buttons -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button onclick="clearCart()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 px-3 rounded-2xl text-xs transition flex flex-col items-center justify-center gap-1 border border-slate-200 active:scale-95">
+            <i class="fa-solid fa-trash-can text-sm text-slate-400"></i> 清空重來
+          </button>
+          
+          <button onclick="openPaymentModal('cash')" id="btnPayCash" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 px-3 rounded-2xl text-xs shadow-md transition flex flex-col items-center justify-center gap-1 active:scale-95">
+            <i class="fa-solid fa-money-bill-wave text-base"></i> 現金找零
+          </button>
+          
+          <button onclick="openPaymentModal('card')" id="btnPayCard" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-sky-500 hover:bg-sky-600 text-white font-bold py-2.5 px-3 rounded-2xl text-xs shadow-md transition flex flex-col items-center justify-center gap-1 active:scale-95">
+            <i class="fa-solid fa-credit-card text-base"></i> 刷信用卡
+          </button>
+
+          <button onclick="openPaymentModal('qr')" id="btnPayQR" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-purple-500 hover:bg-purple-600 text-white font-bold py-2.5 px-3 rounded-2xl text-xs shadow-md transition flex flex-col items-center justify-center gap-1 active:scale-95">
+            <i class="fa-solid fa-qrcode text-base"></i> 掃碼支付
+          </button>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="max-w-6xl w-full mx-auto text-center text-xs text-slate-600 py-2 font-medium">
+    💖 為最可愛的小店長設計 | 祝結帳體驗愉快！
+  </footer>
+
+  <!-- PAYMENT MODAL -->
+  <div id="paymentModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border-4 border-pink-300 relative">
+      
+      <!-- Close Button -->
+      <button onclick="closeModal('paymentModal')" class="absolute top-4 right-4 w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full font-bold flex items-center justify-center">✕</button>
+
+      <!-- CASH PAYMENT CONTENT -->
+      <div id="cashPayContent" class="hidden space-y-4">
+        <h3 class="text-xl font-extrabold text-slate-800 text-center flex items-center justify-center gap-2">
+          💵 現金付款找零練習
+        </h3>
+        <p class="text-xs text-slate-500 text-center">顧客給了我們這張鈔票，請算算看要找多少錢？</p>
+
+        <div class="bg-emerald-50 rounded-2xl p-4 border-2 border-emerald-200 text-center">
+          <div class="text-xs text-emerald-600 font-bold">顧客支付的金額</div>
+          <div class="text-3xl font-black text-emerald-700 my-1" id="cashGivenDisplay">$100</div>
+          <div class="text-xs text-slate-500">商品總金額: $<span id="cashTotalDisplay">0</span></div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">應找零金額：</label>
+          <div id="cashCalcDisplay" class="bg-slate-100 rounded-xl p-3 text-center text-2xl font-bold text-slate-800 tracking-widest min-h-[52px] flex items-center justify-center border-2 border-slate-200">
+            $0
+          </div>
+        </div>
+
+        <!-- Quick Coin Buttons to help count -->
+        <div class="grid grid-cols-4 gap-2 pt-2">
+          <button onclick="addCoinToChange(1)" class="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-xl text-xs border border-amber-300 shadow-sm">+ $1 銅板</button>
+          <button onclick="addCoinToChange(5)" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-xl text-xs border border-slate-300 shadow-sm">+ $5 銅板</button>
+          <button onclick="addCoinToChange(10)" class="bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold py-2 rounded-xl text-xs border border-amber-400 shadow-sm">+ $10 銅板</button>
+          <button onclick="addCoinToChange(50)" class="bg-amber-300 hover:bg-amber-400 text-amber-950 font-bold py-2 rounded-xl text-xs border border-amber-500 shadow-sm">+ $50 銅板</button>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="resetCashCalc()" class="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-2xl text-xs">歸零重算</button>
+          <button onclick="confirmCashPayment()" class="w-2/3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold py-3 rounded-2xl shadow-lg transition active:scale-95 text-sm">確定找零付款！</button>
+        </div>
+      </div>
+
+      <!-- CARD PAYMENT CONTENT -->
+      <div id="cardPayContent" class="hidden space-y-4 text-center">
+        <h3 class="text-xl font-extrabold text-slate-800 flex items-center justify-center gap-2">
+          💳 嗶嗶感應刷卡
+        </h3>
+        <p class="text-xs text-slate-500">把卡片貼近感應機進行付款吧！</p>
+
+        <!-- Cute Credit Card -->
+        <div id="creditCard" onclick="swipeCard()" class="cursor-pointer bg-gradient-to-tr from-purple-500 to-pink-400 text-white p-5 rounded-2xl shadow-xl border-2 border-white/50 hover:scale-105 transition-transform mx-auto max-w-xs text-left relative overflow-hidden group">
+          <div class="text-xs font-bold opacity-80">HAPPY STORE CARD</div>
+          <div class="text-lg font-mono tracking-widest my-4">•••• •••• •••• 8888</div>
+          <div class="flex justify-between items-center text-xs">
+            <span>小小店長</span>
+            <span class="font-bold">點我嗶卡！</span>
+          </div>
+          <div class="absolute -right-4 -bottom-4 text-white/20 text-7xl font-black group-hover:scale-110 transition">💳</div>
+        </div>
+
+        <p class="text-xs text-pink-600 font-bold animate-pulse">👉 點擊卡片進行感應付款 👈</p>
+      </div>
+
+      <!-- QR PAYMENT CONTENT -->
+      <div id="qrPayContent" class="hidden space-y-4 text-center">
+        <h3 class="text-xl font-extrabold text-slate-800 flex items-center justify-center gap-2">
+          📱 手機掃碼支付
+        </h3>
+        <p class="text-xs text-slate-500">讓顧客的手機對準條碼完成付款</p>
+
+        <!-- Simulated Mobile Screen -->
+        <div class="bg-slate-900 p-4 rounded-3xl max-w-[200px] mx-auto border-4 border-slate-700 shadow-xl">
+          <div class="bg-white p-3 rounded-2xl text-slate-800">
+            <div class="text-[10px] font-bold text-slate-400 mb-1">行動支付條碼</div>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=HappyStorePayment" alt="QR Code" class="mx-auto rounded-lg shadow-sm border">
+            <div class="text-xs font-bold text-purple-600 mt-2">付錢囉！</div>
+          </div>
+        </div>
+
+        <button onclick="confirmQRPayment()" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-extrabold py-3 rounded-2xl shadow-lg transition active:scale-95 text-sm">
+          <i class="fa-solid fa-qrcode mr-1"></i> 掃描條碼扣款
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RECEIPT MODAL -->
+  <div id="receiptModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border-4 border-emerald-300 relative flex flex-col items-center">
+      
+      <!-- Receipt Box -->
+      <div class="w-full bg-amber-50/80 p-5 rounded-2xl border border-dashed border-amber-300 font-mono text-slate-700 text-xs shadow-inner animate-print">
+        <div class="text-center font-bold text-sm text-slate-800 mb-1">🍓 夢幻便利商店 發票 🍓</div>
+        <div class="text-center text-[10px] text-slate-400 mb-3">營業日期：<span id="receiptDate">2026-10-04</span></div>
+
+        <!-- Receipt Line Items -->
+        <div id="receiptItems" class="space-y-1.5 border-t border-b border-slate-300 py-3 my-2 max-h-48 overflow-y-auto">
+          <!-- Populated by JS -->
+        </div>
+
+        <!-- Receipt Total -->
+        <div class="flex justify-between font-bold text-sm text-slate-800 pt-1">
+          <span>實付總額</span>
+          <span class="text-emerald-600">$<span id="receiptTotal">0</span></span>
+        </div>
+
+        <div class="text-center text-[10px] text-slate-400 mt-4 border-t border-slate-200 pt-2">
+          謝謝惠顧！歡迎再次光臨 💕
+        </div>
+      </div>
+
+      <!-- Celebration & Next Customer -->
+      <button onclick="finishOrderAndClose()" class="mt-5 w-full bg-pink-500 hover:bg-pink-600 text-white font-extrabold py-3 rounded-2xl shadow-lg transition active:scale-95 text-sm flex items-center justify-center gap-2">
+        <i class="fa-solid fa-heart"></i> 完成結帳！招呼下一位
+      </button>
+    </div>
+  </div>
+
+  <!-- PRINT BARCODES MODAL -->
+  <div id="barcodesModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border-4 border-amber-200 relative max-h-[85vh] flex flex-col">
+      
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-barcode text-amber-500"></i> 商品實體條碼列印卡
+        </h3>
+        <button onclick="closeModal('barcodesModal')" class="w-8 h-8 bg-slate-100 text-slate-500 rounded-full font-bold">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-500 mb-3">您可以將這些條碼列印出來，或用手機開啟此畫面，讓實體鏡頭掃描練習喔！</p>
+
+      <div id="barcodesList" class="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto p-2 flex-1">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="pt-3 border-t flex justify-end">
+        <button onclick="window.print()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1 shadow-sm">
+          <i class="fa-solid fa-print"></i> 列印這頁條碼
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Product Catalog Data
+    const PRODUCTS = [
+      { id: '1001', name: '草莓蛋糕', price: 65, icon: '🍰', code: '1001' },
+      { id: '1002', name: '熊熊玩偶', price: 120, icon: '🧸', code: '1002' },
+      { id: '1003', name: '果汁飲料', price: 25, icon: '🧃', code: '1003' },
+      { id: '1004', name: '棒棒糖', price: 15, icon: '🍭', code: '1004' },
+      { id: '1005', name: '紅蘋果', price: 20, icon: '🍎', code: '1005' },
+      { id: '1006', name: '獨角獸甜甜圈', price: 45, icon: '🍩', code: '1006' },
+      { id: '1007', name: '巧克力牛奶', price: 30, icon: '🥛', code: '1007' },
+      { id: '1008', name: '洋芋片', price: 35, icon: '🥔', code: '1008' },
+      { id: '1009', name: '貓咪軟糖', price: 18, icon: '🍬', code: '1009' }
+    ];
+
+    // Cute Customer Avatars
+    const CUSTOMERS = [
+      { name: '兔兔小姐', avatar: '🐰', reward: 30 },
+      { name: '貓咪咪', avatar: '🐱', reward: 25 },
+      { name: '小熊哥', avatar: '🐻', reward: 40 },
+      { name: '小狐狸', avatar: '🦊', reward: 35 }
+    ];
+
+    // State Variables
+    let cart = [];
+    let currentMode = 'free'; // 'free' or 'challenge'
+    let stars = 0;
+    let coins = 100;
+    let currentCustomer = null;
+    let currentCustomerWishlist = [];
+    
+    // Camera state
+    let codeReader = null;
+    let isCameraActive = false;
+    let activeStream = null;
+
+    // Cash state
+    let cashGiven = 0;
+    let cashEntered = 0;
+
+    // Web Audio Synthesizer for lag-free retro sounds
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+
+      if (type === 'beep') {
+        // High-pitched Scanner Beep
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1800, now);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'chaching') {
+        // Cash Register Sound
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(987, now); // B5
+        osc.frequency.setValueAtTime(1318, now + 0.08); // E6
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      } else if (type === 'victory') {
+        // Fanfare Sound
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((freq, i) => {
+          const noteOsc = audioCtx.createOscillator();
+          const noteGain = audioCtx.createGain();
+          noteOsc.connect(noteGain);
+          noteGain.connect(audioCtx.destination);
+          
+          noteOsc.frequency.setValueAtTime(freq, now + i * 0.08);
+          noteGain.gain.setValueAtTime(0.2, now + i * 0.08);
+          noteGain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.25);
+          
+          noteOsc.start(now + i * 0.08);
+          noteOsc.stop(now + i * 0.08 + 0.25);
+        });
+      } else if (type === 'click') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, now);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+      } else if (type === 'remove') {
+        // Popping sound when removing item
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, now);
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+      }
+    }
+
+    // FULLSCREEN HANDLER FUNCTION
+    function toggleFullscreen() {
+      playSound('click');
+      if (!document.fullscreenElement && 
+          !document.mozFullScreenElement && 
+          !document.webkitFullscreenElement && 
+          !document.msFullscreenElement) {
+        // Enter Fullscreen
+        const docElm = document.documentElement;
+        if (docElm.requestFullscreen) {
+          docElm.requestFullscreen();
+        } else if (docElm.mozRequestFullScreen) { /* Firefox */
+          docElm.mozRequestFullScreen();
+        } else if (docElm.webkitRequestFullscreen) { /* Chrome, Safari and Opera */
+          docElm.webkitRequestFullscreen();
+        } else if (docElm.msRequestFullscreen) { /* IE/Edge */
+          docElm.msRequestFullscreen();
+        }
+      } else {
+        // Exit Fullscreen
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+          document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
+      }
+    }
+
+    // Listen for Fullscreen State Changes (e.g. Esc key)
+    function handleFullscreenChange() {
+      const icon = document.getElementById('fullscreenIcon');
+      const text = document.getElementById('fullscreenText');
+      const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+
+      if (isFull) {
+        icon.className = 'fa-solid fa-compress text-sm';
+        text.innerText = '退出全螢幕';
+      } else {
+        icon.className = 'fa-solid fa-expand text-sm';
+        text.innerText = '全螢幕模式';
+      }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    window.onload = function() {
+      renderProducts();
+      renderCart();
+      renderConveyor();
+      generateBarcodeList();
+
+      document.body.addEventListener('click', () => {
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }, { once: true });
+    };
+
+    // Render Product Shelf
+    function renderProducts() {
+      const grid = document.getElementById('productGrid');
+      grid.innerHTML = PRODUCTS.map(p => `
+        <div onclick="scanProduct('${p.id}')" class="bg-gradient-to-b from-white to-pink-50 hover:to-pink-100 rounded-2xl p-2.5 border-2 border-pink-200 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col items-center justify-between text-center group active:scale-95">
+          <div class="text-3xl sm:text-4xl group-hover:scale-110 transition-transform my-1">${p.icon}</div>
+          <div class="text-xs font-extrabold text-slate-700 leading-tight">${p.name}</div>
+          <div class="mt-1 text-xs font-bold text-pink-600 bg-pink-100/80 px-2 py-0.5 rounded-full">$${p.price}</div>
+        </div>
+      `).join('');
+    }
+
+    // Add Item to Cart / Scan Logic
+    function scanProduct(productId) {
+      const product = PRODUCTS.find(p => p.id === productId);
+      if (!product) return;
+
+      playSound('beep');
+      triggerScanAnimation();
+
+      const existingIndex = cart.findIndex(item => item.id === productId);
+      if (existingIndex > -1) {
+        cart[existingIndex].qty += 1;
+      } else {
+        cart.push({ ...product, qty: 1 });
+      }
+
+      renderCart();
+      renderConveyor();
+    }
+
+    // Trigger Scanner Flash Animation
+    function triggerScanAnimation() {
+      const flash = document.getElementById('scanFlash');
+      flash.classList.remove('opacity-0');
+      flash.classList.add('opacity-100');
+      setTimeout(() => {
+        flash.classList.remove('opacity-100');
+        flash.classList.add('opacity-0');
+      }, 150);
+    }
+
+    // Fully Synchronized Conveyor Belt Renderer
+    function renderConveyor() {
+      const conveyor = document.getElementById('conveyorArea');
+      
+      if (cart.length === 0) {
+        conveyor.innerHTML = `
+          <div id="emptyConveyorText" class="w-full text-center text-slate-400 font-bold text-sm">
+            🛒 輸送帶是空的喔～點擊商品架商品開始結帳！
+          </div>
+        `;
+        return;
+      }
+
+      // Generate items on conveyor according to cart state
+      let conveyorItemsHTML = '';
+      cart.forEach(item => {
+        for (let i = 0; i < item.qty; i++) {
+          conveyorItemsHTML += `
+            <div class="animate-item-appear flex-shrink-0 flex items-center gap-1.5 bg-white border-2 border-blue-300 px-3 py-1.5 rounded-2xl shadow-md text-xs font-bold text-slate-700 hover:border-pink-400 transition-all">
+              <span class="text-lg">${item.icon}</span> 
+              <span>${item.name}</span> 
+              <span class="text-blue-500 font-extrabold">$${item.price}</span>
+            </div>
+          `;
+        }
+      });
+
+      conveyor.innerHTML = conveyorItemsHTML;
+      conveyor.scrollLeft = conveyor.scrollWidth;
+    }
+
+    // Render Cart Display
+    function renderCart() {
+      const cartList = document.getElementById('cartItemsList');
+      const cartTotal = document.getElementById('cartTotal');
+      const itemCount = document.getElementById('registerItemCount');
+
+      const btnPayCash = document.getElementById('btnPayCash');
+      const btnPayCard = document.getElementById('btnPayCard');
+      const btnPayQR = document.getElementById('btnPayQR');
+
+      if (cart.length === 0) {
+        cartList.innerHTML = `<div class="text-center text-slate-500 py-4 font-normal text-xs">尚無商品，請逼逼掃描條碼</div>`;
+        cartTotal.innerText = '0';
+        itemCount.innerText = '0 件商品';
+
+        btnPayCash.disabled = true;
+        btnPayCard.disabled = true;
+        btnPayQR.disabled = true;
+        return;
+      }
+
+      btnPayCash.disabled = false;
+      btnPayCard.disabled = false;
+      btnPayQR.disabled = false;
+
+      let total = 0;
+      let totalQty = 0;
+
+      cartList.innerHTML = cart.map(item => {
+        const itemTotal = item.price * item.qty;
+        total += itemTotal;
+        totalQty += item.qty;
+
+        return `
+          <div class="flex justify-between items-center bg-slate-700/60 hover:bg-slate-700 p-2 rounded-xl text-xs transition">
+            <div class="flex items-center gap-2">
+              <span class="text-base">${item.icon}</span>
+              <span class="font-bold text-white">${item.name}</span>
+              <span class="text-amber-300 font-semibold">x${item.qty}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-emerald-400 font-bold">$${itemTotal}</span>
+              <button onclick="decreaseItem('${item.id}')" title="減少數量" class="bg-red-400/20 hover:bg-red-500 text-red-300 hover:text-white rounded-lg w-6 h-6 flex items-center justify-center font-bold transition">
+                ✕
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      cartTotal.innerText = total;
+      itemCount.innerText = `${totalQty} 件商品`;
+    }
+
+    // Decrease or Remove Item from Cart with Conveyor Sync
+    function decreaseItem(id) {
+      playSound('remove');
+      const idx = cart.findIndex(i => i.id === id);
+      if (idx > -1) {
+        if (cart[idx].qty > 1) {
+          cart[idx].qty -= 1;
+        } else {
+          cart.splice(idx, 1);
+        }
+      }
+      renderCart();
+      renderConveyor();
+    }
+
+    // Clear Cart & Conveyor Completely
+    function clearCart() {
+      playSound('remove');
+      cart = [];
+      renderCart();
+      renderConveyor();
+    }
+
+    function switchMode(mode) {
+      playSound('click');
+      currentMode = mode;
+      
+      const btnFree = document.getElementById('btnModeFree');
+      const btnChallenge = document.getElementById('btnModeChallenge');
+      const customerBanner = document.getElementById('customerBanner');
+
+      if (mode === 'free') {
+        btnFree.className = 'px-3 py-1.5 rounded-xl transition-all duration-200 bg-pink-500 text-white shadow-sm';
+        btnChallenge.className = 'px-3 py-1.5 rounded-xl transition-all duration-200 text-slate-600 hover:text-pink-500';
+        customerBanner.classList.add('hidden');
+      } else {
+        btnChallenge.className = 'px-3 py-1.5 rounded-xl transition-all duration-200 bg-pink-500 text-white shadow-sm';
+        btnFree.className = 'px-3 py-1.5 rounded-xl transition-all duration-200 text-slate-600 hover:text-pink-500';
+        customerBanner.classList.remove('hidden');
+        setupNextCustomer();
+      }
+      clearCart();
+    }
+
+    function setupNextCustomer() {
+      currentCustomer = CUSTOMERS[Math.floor(Math.random() * CUSTOMERS.length)];
+      
+      const itemCount = Math.floor(Math.random() * 3) + 2;
+      currentCustomerWishlist = [];
+      for (let i = 0; i < itemCount; i++) {
+        const randomItem = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)];
+        currentCustomerWishlist.push(randomItem);
+      }
+
+      document.getElementById('customerAvatar').innerText = currentCustomer.avatar;
+      document.getElementById('customerName').innerText = currentCustomer.name;
+      document.getElementById('customerReward').innerText = `+$${currentCustomer.reward}`;
+
+      document.getElementById('customerWishlist').innerHTML = currentCustomerWishlist.map(item => `
+        <span class="bg-white/80 p-1 rounded-xl text-lg border border-pink-200 shadow-sm" title="${item.name}">${item.icon}</span>
+      `).join('');
+    }
+
+    function openPaymentModal(type) {
+      playSound('click');
+      const modal = document.getElementById('paymentModal');
+      const cashPay = document.getElementById('cashPayContent');
+      const cardPay = document.getElementById('cardPayContent');
+      const qrPay = document.getElementById('qrPayContent');
+
+      cashPay.classList.add('hidden');
+      cardPay.classList.add('hidden');
+      qrPay.classList.add('hidden');
+
+      const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+      if (type === 'cash') {
+        cashPay.classList.remove('hidden');
+        cashGiven = Math.ceil((total + 10) / 50) * 50;
+        if (cashGiven < total) cashGiven = total + 50;
+
+        document.getElementById('cashGivenDisplay').innerText = `$${cashGiven}`;
+        document.getElementById('cashTotalDisplay').innerText = total;
+        resetCashCalc();
+      } else if (type === 'card') {
+        cardPay.classList.remove('hidden');
+      } else if (type === 'qr') {
+        qrPay.classList.remove('hidden');
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal(modalId) {
+      playSound('click');
+      document.getElementById(modalId).classList.add('hidden');
+    }
+
+    function addCoinToChange(amount) {
+      playSound('beep');
+      cashEntered += amount;
+      document.getElementById('cashCalcDisplay').innerText = `$${cashEntered}`;
+    }
+
+    function resetCashCalc() {
+      cashEntered = 0;
+      document.getElementById('cashCalcDisplay').innerText = '$0';
+    }
+
+    function confirmCashPayment() {
+      const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      const expectedChange = cashGiven - total;
+
+      if (cashEntered === expectedChange) {
+        completePayment();
+      } else {
+        alert(`再算算看喔！應該要找 $${expectedChange} 元才對～加油！`);
+      }
+    }
+
+    function swipeCard() {
+      completePayment();
+    }
+
+    function confirmQRPayment() {
+      completePayment();
+    }
+
+    function completePayment() {
+      closeModal('paymentModal');
+      playSound('chaching');
+
+      const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+      coins += Math.floor(total * 0.1);
+      stars += 1;
+
+      if (currentMode === 'challenge' && currentCustomer) {
+        coins += currentCustomer.reward;
+      }
+
+      document.getElementById('starCount').innerText = stars;
+      document.getElementById('coinCount').innerText = coins;
+
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.6 }
+      });
+
+      showReceipt();
+    }
+
+    function showReceipt() {
+      const modal = document.getElementById('receiptModal');
+      const itemsContainer = document.getElementById('receiptItems');
+      const totalContainer = document.getElementById('receiptTotal');
+      const dateContainer = document.getElementById('receiptDate');
+
+      const now = new Date();
+      dateContainer.innerText = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+
+      let total = 0;
+      itemsContainer.innerHTML = cart.map(item => {
+        const itemTotal = item.price * item.qty;
+        total += itemTotal;
+        return `
+          <div class="flex justify-between">
+            <span>${item.icon} ${item.name} x${item.qty}</span>
+            <span>$${itemTotal}</span>
+          </div>
+        `;
+      }).join('');
+
+      totalContainer.innerText = total;
+      playSound('victory');
+      modal.classList.remove('hidden');
+    }
+
+    function finishOrderAndClose() {
+      closeModal('receiptModal');
+      clearCart();
+      if (currentMode === 'challenge') {
+        setupNextCustomer();
+      }
+    }
+
+    async function toggleCamera() {
+      playSound('click');
+      const video = document.getElementById('webcamVideo');
+      const fallback = document.getElementById('scannerFallback');
+      const laser = document.getElementById('laserLine');
+      const btnText = document.getElementById('camBtnText');
+
+      if (isCameraActive) {
+        if (codeReader) {
+          codeReader.reset();
+        }
+        if (activeStream) {
+          activeStream.getTracks().forEach(track => track.stop());
+        }
+        video.classList.add('hidden');
+        laser.classList.add('hidden');
+        fallback.classList.remove('hidden');
+        btnText.innerText = '開啟鏡頭掃條碼';
+        isCameraActive = false;
+      } else {
+        try {
+          codeReader = new ZXing.BrowserMultiFormatReader();
+          const videoInputDevices = await codeReader.listVideoInputDevices();
+          
+          if (videoInputDevices.length === 0) {
+            alert('找不到攝影機裝置喔！您可以點擊下方商品來進行逼逼結帳！');
+            return;
+          }
+
+          const selectedDeviceId = videoInputDevices[0].deviceId;
+          video.classList.remove('hidden');
+          laser.classList.remove('hidden');
+          fallback.classList.add('hidden');
+          btnText.innerText = '關閉鏡頭';
+          isCameraActive = true;
+
+          codeReader.decodeFromVideoDevice(selectedDeviceId, 'webcamVideo', (result, err) => {
+            if (result) {
+              const scannedText = result.getText();
+              handleScannedBarcode(scannedText);
+            }
+          });
+
+        } catch (e) {
+          console.error(e);
+          alert('無法開啟攝影機權限，別擔心！依然可以直接點擊商品來結帳喔！');
+        }
+      }
+    }
+
+    function handleScannedBarcode(code) {
+      const found = PRODUCTS.find(p => p.code === code);
+      if (found) {
+        scanProduct(found.id);
+      }
+    }
+
+    function openPrintBarcodesModal() {
+      playSound('click');
+      const modal = document.getElementById('barcodesModal');
+      modal.classList.remove('hidden');
+    }
+
+    function generateBarcodeList() {
+      const container = document.getElementById('barcodesList');
+      container.innerHTML = PRODUCTS.map(p => `
+        <div class="border-2 border-slate-200 rounded-2xl p-3 text-center bg-white flex flex-col items-center">
+          <div class="text-2xl">${p.icon}</div>
+          <div class="text-xs font-bold text-slate-800">${p.name}</div>
+          <div class="text-[10px] text-pink-600 font-bold">$${p.price}</div>
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${p.code}" class="w-16 h-16 my-1 border rounded" alt="${p.name} barcode">
+          <div class="text-[9px] font-mono text-slate-400">NO.${p.code}</div>
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
+</html>
